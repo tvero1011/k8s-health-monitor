@@ -1,5 +1,6 @@
-from flask import Flask
+from flask import Flask, jsonify
 
+import requests
 import os
 import sys
 
@@ -12,13 +13,21 @@ def require_env(name):
 
 MONITOR_TARGETS = [u.strip() for u in require_env("MONITOR_TARGETS").split(",")]
 CHECK_INTERVAL = int(require_env("CHECK_INTERVAL_SECONDS"))
-
 app = Flask(__name__)
-
 @app.route('/healthz')
-
 def healthz():
     return 'OK', 200
+
+def check_target(url):
+    try:
+        r = requests.get(url, timeout=5)
+        return {"up": r.status_code < 400, "status_code": r.status_code}
+    except requests.RequestException as e:
+        return {"up": False, "error": type(e).__name__}
+
+@app.route('/status')
+def status():
+    return jsonify({url: check_target(url) for url in MONITOR_TARGETS})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
