@@ -3,6 +3,9 @@ from flask import Flask, jsonify
 import requests
 import os
 import sys
+import threading
+import time
+
 
 def require_env(name):
     value = os.environ.get(name)
@@ -27,7 +30,18 @@ def check_target(url):
 
 @app.route('/status')
 def status():
-    return jsonify({url: check_target(url) for url in MONITOR_TARGETS})
+    return jsonify(latest_results)
+
+latest_results = {}
+def run_checks():
+    for url in MONITOR_TARGETS:
+        latest_results[url] = check_target(url)
+
+def checker_loop():
+    while True:
+        run_checks()
+        time.sleep(CHECK_INTERVAL)
 
 if __name__ == '__main__':
+    threading.Thread(target=checker_loop, daemon=True).start()
     app.run(host='0.0.0.0', port=5000)
