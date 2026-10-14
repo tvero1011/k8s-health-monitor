@@ -48,6 +48,12 @@ def ready():
         return 'READY', 200
     return 'NOT READY', 503
 
+@app.route('/metrics')
+def metrics():
+    up = sum(1 for r in latest_results.values() if r["up"])
+    return jsonify(targets_total=len(MONITOR_TARGETS), targets_up=up,
+                   targets_down=len(latest_results) - up)
+
 if __name__ == '__main__':
     threading.Thread(target=checker_loop, daemon=True).start()
     app.run(host='0.0.0.0', port=5000)
