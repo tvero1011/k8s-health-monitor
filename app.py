@@ -42,6 +42,12 @@ def checker_loop():
         run_checks()
         time.sleep(CHECK_INTERVAL)
 
+@app.route('/ready')
+def ready():
+    if len(latest_results) == len(MONITOR_TARGETS):
+        return 'READY', 200
+    return 'NOT READY', 503
+
 if __name__ == '__main__':
     threading.Thread(target=checker_loop, daemon=True).start()
     app.run(host='0.0.0.0', port=5000)
