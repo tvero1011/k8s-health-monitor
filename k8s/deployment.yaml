@@ -21,3 +21,5 @@ spec:
           envFrom:
             - configMapRef:
                 name: health-monitor-config
+            - secretRef:
+                name: health-monitor-secret

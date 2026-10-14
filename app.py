@@ -16,6 +16,8 @@ def require_env(name):
 
 MONITOR_TARGETS = [u.strip() for u in require_env("MONITOR_TARGETS").split(",")]
 CHECK_INTERVAL = int(require_env("CHECK_INTERVAL_SECONDS"))
+API_TOKEN = require_env("API_TOKEN")
+
 app = Flask(__name__)
 @app.route('/healthz')
 def healthz():
