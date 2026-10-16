@@ -56,6 +56,7 @@ def metrics():
     return jsonify(targets_total=len(MONITOR_TARGETS), targets_up=up,
                    targets_down=len(latest_results) - up)
 
+threading.Thread(target=checker_loop, daemon=True).start()
+
 if __name__ == '__main__':
-    threading.Thread(target=checker_loop, daemon=True).start()
     app.run(host='0.0.0.0', port=5000)
