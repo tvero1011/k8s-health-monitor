@@ -1,0 +1,8 @@
+scrapeConfigs:
+  health-monitor:
+    enabled: true
+    job_name: health-monitor
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - health-monitor-service.default.svc.cluster.local:80

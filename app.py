@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, Response
 
 import requests
 import os
@@ -50,11 +50,28 @@ def ready():
         return 'READY', 200
     return 'NOT READY', 503
 
+
 @app.route('/metrics')
 def metrics():
     up = sum(1 for r in latest_results.values() if r["up"])
-    return jsonify(targets_total=len(MONITOR_TARGETS), targets_up=up,
-                   targets_down=len(latest_results) - up)
+    total = len(MONITOR_TARGETS)
+    checked = len(latest_results)
+    down = checked - up
+
+    metrics_text = (
+        "# HELP health_monitor_targets_total Number of configured targets\n"
+        "# TYPE health_monitor_targets_total gauge\n"
+        f"health_monitor_targets_total {total}\n"
+        "# HELP health_monitor_targets_up Number of healthy targets\n"
+        "# TYPE health_monitor_targets_up gauge\n"
+        f"health_monitor_targets_up {up}\n"
+        "# HELP health_monitor_targets_down Number of unhealthy checked targets\n"
+        "# TYPE health_monitor_targets_down gauge\n"
+        f"health_monitor_targets_down {down}\n"
+    )
+
+    return Response(metrics_text, content_type="text/plain; version=0.0.4")
+
 
 threading.Thread(target=checker_loop, daemon=True).start()
 
