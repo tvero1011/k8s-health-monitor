@@ -1,21 +1,35 @@
 name: deploy
+
 on:
   push:
     branches: [main]
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: Generate image tag
+        run: echo "IMAGE_TAG=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+
       - name: Build image
-        run: docker build -t health-monitor:latest .
+        run: docker build -t health-monitor:${IMAGE_TAG} .
+
       - name: Create kind cluster
         uses: helm/kind-action@v1
         with:
           cluster_name: ci-cluster
+
       - name: Load image into cluster
-        run: kind load docker-image health-monitor:latest --name ci-cluster
+        run: kind load docker-image health-monitor:${IMAGE_TAG} --name ci-cluster
+
       - name: Deploy with Helm
-        run: helm upgrade --install health-monitor ./helm-chart --wait --timeout 120s
+        run: |
+          helm upgrade --install health-monitor ./helm-chart \
+            --set image.tag=${IMAGE_TAG} \
+            --wait --timeout 120s
+
       - name: Show pods
         run: kubectl get pods
