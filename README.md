@@ -4,8 +4,6 @@ A Flask-based website health monitoring service deployed on Kubernetes using Doc
 
 This project demonstrates containerization, Kubernetes deployments, Helm-based configuration, CI/CD, application health probes, autoscaling, and observability using Prometheus and Grafana.
 
-> **Status:** DevOps portfolio and learning project. It runs on a local Kind cluster and is not production-ready; see [Known Limitations](#known-limitations) before reusing any of it.
-
 ## Features
 
 - Periodic HTTP health checks for configurable websites, run by a background thread.
@@ -90,7 +88,7 @@ Git push to main
 GitHub Actions
        |
        v
-Build Docker image tagged with the short commit SHA
+Build Docker image using Git commit SHA
        |
        v
 Create temporary Kind cluster
@@ -170,7 +168,7 @@ k8s-health-monitor/
 - `Dockerfile` — builds the application image, installs dependencies, and runs Gunicorn as a non-root user.
 - `requirements.txt` — pinned Python dependencies.
 - `helm-chart/` — Helm chart for deploying the application (Deployment, Service, ConfigMap, Secret, HPA).
-- `k8s/` — an older set of plain Kubernetes manifests. It has drifted from the chart (no CPU request, no HPA, fixed `replicas`), so do not apply it. Helm is the source of truth.
+- `k8s/` — plain Kubernetes manifests retained as reference. Helm is the source of truth.
 - `prometheus-values.yaml` — additional Prometheus scrape configuration.
 - `.github/workflows/deploy.yml` — GitHub Actions CI pipeline.
 
@@ -182,9 +180,9 @@ The application requires the following environment variables and exits with code
 |---|---|
 | `MONITOR_TARGETS` | Comma-separated list of URLs to monitor |
 | `CHECK_INTERVAL_SECONDS` | Time in seconds between health-check rounds |
-| `API_TOKEN` | Application token configured through a Kubernetes Secret (never printed or logged). It is required at startup, but no endpoint uses it yet: there is no authentication, so it is a placeholder for future use |
+| `API_TOKEN` | Application token configured through a Kubernetes Secret (never printed or logged) |
 
-In Kubernetes, the monitoring targets and interval are supplied through a ConfigMap, while the API token is supplied through a Secret. Both live in the chart templates (`helm-chart/templates/configmap.yaml` and `secret.yaml`), not in `values.yaml`, so changing the URLs means editing the template. The committed Secret holds only the placeholder `change-me`. ConfigMap and Secret changes are not picked up by running Pods; run `kubectl rollout restart deployment/health-monitor` after a change.
+In Kubernetes, the monitoring targets and interval are supplied through a ConfigMap, while the API token is supplied through a Secret. The committed Secret holds only the placeholder `change-me`.
 
 The current configuration monitors:
 
@@ -330,7 +328,7 @@ Override the replica count:
 helm upgrade health-monitor ./helm-chart --set replicaCount=4
 ```
 
-The chart also deploys an HPA (minimum 2, maximum 5), and the Deployment's `replicas` field is still set from `replicaCount`. Once metrics-server is running, the HPA takes over and moves the count back toward its own calculation within minutes, and every `helm upgrade` resets it to `replicaCount` again. Omitting `replicas` when the HPA is enabled is a planned fix (see Known Limitations).
+> **Note:** once the HPA from step 5 exists, it controls the replica count. The chart still sets `replicas` from `replicaCount`, so this command and the HPA fight each other and the HPA resets the count within minutes. This is a known limitation (see below). Use this step before you add the HPA, or to demonstrate the conflict.
 
 Inspect the release history:
 
@@ -375,14 +373,6 @@ In testing, average CPU rose far above the 50% target and the Deployment scaled 
 
 Prometheus is installed using the `prometheus-community/prometheus` Helm chart in the `monitoring` namespace.
 
-For example (release name `prometheus`, which gives the `prometheus-server` Service used below):
-
-```bash
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
-helm install prometheus prometheus-community/prometheus -n monitoring --create-namespace -f prometheus-values.yaml
-```
-
 The additional scrape configuration is stored in `prometheus-values.yaml`. It tells Prometheus to scrape the Health Monitor Service at:
 
 ```text
@@ -406,8 +396,6 @@ Useful checks:
 
 A target state of `UP` means Prometheus can scrape the application's metrics endpoint. It does not guarantee that every monitored website is healthy.
 
-Prometheus scrapes through the Service, so each scrape lands on one randomly chosen Pod and all Pods share the same labels. Every Pod runs its own checker, so the values can differ slightly between scrapes. Scraping each Pod separately (Pod discovery or a ServiceMonitor) would fix this.
-
 ## Grafana Dashboard
 
 Grafana is installed in the `monitoring` namespace and configured to use Prometheus as its data source.
@@ -418,7 +406,7 @@ Access Grafana:
 kubectl port-forward -n monitoring service/grafana 3000:80
 ```
 
-Open `http://localhost:3000` and sign in with the configured Grafana administrator credentials. The Prometheus data source URL inside the cluster is `http://prometheus-server.monitoring.svc.cluster.local`.
+Open `http://localhost:3000` and sign in with the configured Grafana administrator credentials.
 
 The `health monitor` dashboard contains two time series panels, each showing its metric over time:
 
@@ -442,8 +430,6 @@ It:
 5. Loads the image into the cluster.
 6. Deploys the application using Helm and waits for it to become ready.
 
-The workflow runs on `ubuntu-latest`. GitHub moved that label from Ubuntu 24.04 to 26.04 between 19 October and 19 November 2026, so new runs use 26.04. The workflow has not been pinned or re-tested against it yet; pin `ubuntu-24.04` or test `ubuntu-26.04` if a run breaks. There is no `helm lint` step and there are no unit tests, so the pipeline only proves that the image builds and the chart deploys.
-
 The workflow uses a unique commit-based image tag rather than relying on `latest` for CI deployments. The local Helm chart still defaults to the `latest` tag for convenience, and the CI workflow overrides that value with the commit SHA.
 
 A successful workflow verifies the build and deployment process. It does not provide a public application URL or deploy to production.
@@ -458,7 +444,7 @@ A successful workflow verifies the build and deployment process. It does not pro
 - Helm tracks release revisions and supports rollback.
 - Container images must be rebuilt and loaded into Kind after local code changes.
 - Gunicorn does not run the `if __name__ == '__main__'` block, so the background thread must start at module level, and only one worker may be used.
-- A typo in `values.yaml` (`imag:` instead of `image:`) turned the Actions run red; only the Helm step reads that file, so only it failed. `helm lint` reproduces this locally, so reproduce failures locally before pushing.
+- I broke the Helm chart on purpose, read the error in the Actions log, and fixed it.
 - The HPA needs a CPU request on the Pods; without one it shows `<unknown>`.
 - Git commit SHA tags help identify the source version used to build an image.
 - Prometheus scrapes metrics from applications, while Grafana visualizes those metrics.
@@ -474,26 +460,23 @@ A successful workflow verifies the build and deployment process. It does not pro
 - Grafana persistence is disabled.
 - The API token is supplied through a Kubernetes Secret holding a placeholder; a production deployment should use a secret-management solution.
 - metrics-server is installed manually and patched for Kind's self-signed certificates.
-- The `k8s/` folder is an old copy that has drifted from the chart (no CPU request, no HPA). Remove it or bring it back in sync.
-- The Deployment sets `replicas` from `replicaCount` while an HPA also controls the count, so every `helm upgrade` resets it. Fix: omit `replicas` when the HPA is enabled (an `hpa.enabled` value).
-- The Pod has a CPU request (50m) but no memory request and no CPU or memory limits.
-- The monitored URLs and interval are hard-coded in the ConfigMap template, not in `values.yaml`, and `values.yaml` only holds `replicaCount` and `image`.
-- `API_TOKEN` is required but not used: there is no authentication on any endpoint.
-- The checker loop only catches `requests.RequestException`. Any other error would end the checker thread silently while `/healthz` still returns OK, and liveness would not notice.
-- Every replica runs its own checker, so scaling the web part also multiplies the outgoing checks. Prometheus scrapes through the Service, so it sees a random Pod each time.
-- No `securityContext` in the Pod spec, and the Dockerfile uses a named user (`appuser`) rather than a numeric UID, so Kubernetes could not verify `runAsNonRoot`. There is no `.dockerignore` and no image scan.
-- No Ingress, HTTPS or NetworkPolicy; the Service is ClusterIP only and is reached through port-forwarding.
-- CI runs on `ubuntu-latest` (now Ubuntu 26.04) with no `helm lint` step and no tests, and it runs on every push to `main`, including documentation-only changes.
+- The `k8s/` folder duplicates the Helm templates and is kept only as reference. It can drift from the chart.
+- The Deployment sets `replicas` from `values.yaml` while the HPA also controls the count, so every `helm upgrade` resets it. Fix: omit `replicas` when the HPA is enabled.
+- Pods have a CPU request (50m) but no memory request and no CPU or memory limits.
+- The monitored URLs are written in the ConfigMap template, not in `values.yaml`.
+- The checker thread only catches request errors. An unexpected error would stop it silently while `/healthz` still answers OK.
+- Each replica runs its own checker, so scaling the Deployment multiplies the outgoing checks.
+- CI has no `helm lint` step and no unit tests, and uses `runs-on: ubuntu-latest`. GitHub scheduled that label to move to Ubuntu 26.04 between 19 October and 19 November 2026. If the run fails, pin `ubuntu-24.04`.
+- No Ingress, TLS or NetworkPolicy, and no `.dockerignore`.
 
 ## Future Improvements
 
 - Add per-target Prometheus metrics with labels.
 - Configure Grafana dashboards for individual target health.
-- Add Prometheus alerting rules for unhealthy targets and failed scrapes (for example `health_monitor_targets_down` above 0 for 5 minutes).
+- Add Prometheus alerting rules for unhealthy targets and failed scrapes.
 - Configure persistent storage for Grafana dashboards.
+- Omit `replicas` when the HPA is on, add resource limits, and move the URLs into `values.yaml` (with `values-dev.yaml` and `values-prod.yaml`).
+- Remove the old `k8s/` folder and add a `helm lint` step to CI.
 - Publish images to a container registry.
 - Add deployment to a managed Kubernetes cluster.
 - Improve secret management and production observability.
-- Add resource limits, an `hpa.enabled` value, `values-dev.yaml` and `values-prod.yaml`, a `helm lint` step in CI, and a try/except around the checker loop.
-- Run the checker as its own Deployment (or use leader election) so only the web part scales.
-- Add an Ingress with TLS and a NetworkPolicy.
