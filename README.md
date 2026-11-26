@@ -458,3 +458,7 @@ A successful workflow verifies the build and deployment process. It does not pro
 3. **Observability:** per-target Prometheus metrics with labels, per-URL Grafana panels, alerting rules for unhealthy targets and failed scrapes, and persistent Grafana storage.
 4. **CI quality:** add helm lint and unit tests, and remove the old k8s/ folder.
 5. **Delivery:** publish images to a container registry, deploy to a managed Kubernetes cluster, and use a proper secrets manager.
+
+## Author
+
+[@tvero1011](https://github.com/tvero1011)
