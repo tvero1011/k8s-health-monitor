@@ -436,47 +436,25 @@ A successful workflow verifies the build and deployment process. It does not pro
 
 ## Lessons Learned
 
-- A Pod can be running without being ready to receive traffic. A failing readiness probe removes the Pod from the Service without restarting it, while a failing liveness probe restarts the container.
-- A Kubernetes Service provides a stable endpoint, and `kubectl get endpoints` shows which Pods actually receive traffic.
-- ConfigMaps separate application configuration from container images.
-- Kubernetes Secrets require careful handling; base64 encoding alone is not encryption.
-- Fail fast: a missing setting stops the app at startup, which is easier to debug than a silent wrong run.
-- Helm tracks release revisions and supports rollback.
-- Container images must be rebuilt and loaded into Kind after local code changes.
-- Gunicorn does not run the `if __name__ == '__main__'` block, so the background thread must start at module level, and only one worker may be used.
-- I broke the Helm chart on purpose, read the error in the Actions log, and fixed it.
-- The HPA needs a CPU request on the Pods; without one it shows `<unknown>`.
-- Git commit SHA tags help identify the source version used to build an image.
-- Prometheus scrapes metrics from applications, while Grafana visualizes those metrics.
-- A healthy Prometheus scrape target does not necessarily mean the websites being monitored are healthy.
-- CI can validate Kubernetes deployments in a temporary cluster without deploying to production.
+- **Running is not ready.** A failing readiness probe removes a Pod from the Service; a failing liveness probe restarts the container. `kubectl get endpoints` shows which Pods really receive traffic.
+- **Keep config out of the image.** ConfigMaps hold settings, Secrets hold tokens (base64 is not encryption), and the app fails fast at startup if a setting is missing.
+- **Gunicorn changes how the app starts.** It skips the `if __name__ == '__main__'` block, so the background thread starts at module level and only one worker is used.
+- **Helm gives repeatable releases.** It tracks revisions and supports rollback. Images must be rebuilt and loaded into Kind after code changes, and CI tags them with the commit SHA.
+- **The HPA needs a CPU request** on the Pods, otherwise it shows `<unknown>`.
+- **Two different "up" signals.** A healthy Prometheus scrape means the monitor is reachable, not that the monitored websites are healthy. Prometheus collects, Grafana visualizes.
 
 ## Known Limitations
 
-- The current deployment is a local Kind learning environment, not a production cluster.
-- The application exposes aggregate target metrics; per-URL Prometheus labels and alerts have not been implemented.
-- The local Helm chart defaults to the `latest` image tag.
-- Kind uses locally loaded images rather than a remote container registry.
-- Grafana persistence is disabled.
-- The API token is supplied through a Kubernetes Secret holding a placeholder; a production deployment should use a secret-management solution.
-- metrics-server is installed manually and patched for Kind's self-signed certificates.
-- The `k8s/` folder duplicates the Helm templates and is kept only as reference. It can drift from the chart.
-- The Deployment sets `replicas` from `values.yaml` while the HPA also controls the count, so every `helm upgrade` resets it. Fix: omit `replicas` when the HPA is enabled.
-- Pods have a CPU request (50m) but no memory request and no CPU or memory limits.
-- The monitored URLs are written in the ConfigMap template, not in `values.yaml`.
-- The checker thread only catches request errors. An unexpected error would stop it silently while `/healthz` still answers OK.
-- Each replica runs its own checker, so scaling the Deployment multiplies the outgoing checks.
-- CI has no `helm lint` step and no unit tests, and uses `runs-on: ubuntu-latest`. GitHub scheduled that label to move to Ubuntu 26.04 between 19 October and 19 November 2026. If the run fails, pin `ubuntu-24.04`.
-- No Ingress, TLS or NetworkPolicy, and no `.dockerignore`.
+- **Local learning setup:** Kind only, images loaded locally (no registry), `latest` tag by default, metrics-server patched by hand, Grafana without persistence, and a placeholder Secret.
+- **Replica conflict:** the Deployment sets `replicas` and the HPA also controls it, so every `helm upgrade` resets the count. Fix: omit `replicas` when the HPA is enabled.
+- **Monitoring depth:** only aggregate metrics (no per-URL labels or alerts). The checker thread catches only request errors, so an unexpected error would stop it silently while `/healthz` still says OK. Each replica runs its own checker, so scaling multiplies outgoing checks.
+- **Hardening gaps:** no memory request or resource limits, no Ingress, TLS or NetworkPolicy, no `.dockerignore`, and the `k8s/` folder can drift from the Helm chart.
+- **CI gaps:** no `helm lint` and no unit tests. `ubuntu-latest` is moving to Ubuntu 26.04, so pin `ubuntu-24.04` if the run fails.
 
 ## Future Improvements
 
-- Add per-target Prometheus metrics with labels.
-- Configure Grafana dashboards for individual target health.
-- Add Prometheus alerting rules for unhealthy targets and failed scrapes.
-- Configure persistent storage for Grafana dashboards.
-- Omit `replicas` when the HPA is on, add resource limits, and move the URLs into `values.yaml` (with `values-dev.yaml` and `values-prod.yaml`).
-- Remove the old `k8s/` folder and add a `helm lint` step to CI.
-- Publish images to a container registry.
-- Add deployment to a managed Kubernetes cluster.
-- Improve secret management and production observability.
+1. **Chart fixes:** omit `replicas` when the HPA is on, add memory requests and resource limits, and move the URLs into `values.yaml` with `values-dev.yaml` and `values-prod.yaml`.
+2. **Reliability:** catch all errors in the checker loop, and make `/healthz` fail if the last successful check is too old.
+3. **Observability:** per-target Prometheus metrics with labels, per-URL Grafana panels, alerting rules for unhealthy targets and failed scrapes, and persistent Grafana storage.
+4. **CI quality:** add helm lint and unit tests, and remove the old k8s/ folder.
+5. **Delivery:** publish images to a container registry, deploy to a managed Kubernetes cluster, and use a proper secrets manager.
